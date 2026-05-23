@@ -17,6 +17,7 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://graystonecontracting.com"),
   title: "Graystone Contracting LLC | Premium Construction Arizona",
   description:
     "Graystone Contracting LLC delivers premium commercial and residential construction across Arizona. Licensed, bonded & insured. 15+ years of excellence, 500+ projects completed.",
