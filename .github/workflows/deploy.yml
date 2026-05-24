@@ -29,17 +29,17 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
-      # ── Preview deploy (pull requests) ──────────────────────────────────
+      # ── Preview deploy (pull requests) ───────────────────────────────────
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
+        working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          DEPLOY_OUTPUT=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1)
-          echo "$DEPLOY_OUTPUT"
-          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
+          DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "Preview URL: $DEPLOY_URL"
 
       - name: Comment Preview URL on PR
         if: github.event_name == 'pull_request' && steps.preview.outputs.url != ''
@@ -66,13 +66,22 @@ jobs:
               ].join('\n'),
             });
 
-      # ── Production deploy (push to main) ────────────────────────────────
+      # ── Production deploy (push to main) ─────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          echo "▲ Deploying to Vercel production..."
           DEPLOY_OUTPUT=$(vercel deploy --token=$VERCEL_TOKEN --yes --prod 2>&1)
           echo "$DEPLOY_OUTPUT"
           DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
-          echo "✅ Production deployed to: $DEPLOY_URL"
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "⚠ Could not parse URL from output. Check Vercel dashboard."
+          else
+            echo ""
+            echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "✅  LIVE URL: $DEPLOY_URL"
+            echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          fi
