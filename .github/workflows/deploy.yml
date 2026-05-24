@@ -10,10 +10,14 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 10   # fail fast — should finish in under 3 min
 
     steps:
       - name: Checkout
@@ -23,21 +27,45 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: apps/web/package-lock.json
+
+      # Cache node_modules by lockfile hash — skips install on repeat runs
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('apps/web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # npm ci: clean, deterministic, 3-5x faster than npm install
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: apps/web
+        run: npm ci
 
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
+
+      # vercel build runs the build locally (fast, output to .vercel/output/)
+      # vercel deploy --prebuilt uploads only the artifacts — no remote build,
+      # no second npm install, no upload of node_modules
+      - name: Build
+        working-directory: apps/web
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            vercel build --prod --token=$VERCEL_TOKEN --yes
+          else
+            vercel build --token=$VERCEL_TOKEN --yes
+          fi
 
       # ── Preview deploy (pull requests) ───────────────────────────────────
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
         working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          DEPLOY_URL=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
+          DEPLOY_URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
           echo "Preview URL: $DEPLOY_URL"
 
@@ -70,15 +98,12 @@ jobs:
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          echo "▲ Deploying to Vercel production..."
-          DEPLOY_OUTPUT=$(vercel deploy --token=$VERCEL_TOKEN --yes --prod 2>&1)
+          DEPLOY_OUTPUT=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes 2>&1)
           echo "$DEPLOY_OUTPUT"
           DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
           if [ -z "$DEPLOY_URL" ]; then
-            echo "⚠ Could not parse URL from output. Check Vercel dashboard."
+            echo "⚠ Could not parse URL — check https://vercel.com/dashboard"
           else
             echo ""
             echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
