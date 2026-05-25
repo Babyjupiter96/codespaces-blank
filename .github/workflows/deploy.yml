@@ -46,11 +46,40 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@54.4.1 --no-audit --no-fund --prefer-offline
 
-      - name: Link Vercel project
+      # Use the Vercel REST API (token only) to fetch orgId + projectId
+      # and write .vercel/project.json so vercel build can run without
+      # needing VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets.
+      - name: Create .vercel/project.json via API
         working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel link --yes --token=$VERCEL_TOKEN
+        run: |
+          # Get user/org ID
+          ORG_ID=$(curl -sf "https://api.vercel.com/v2/user" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" | \
+            python3 -c "import json,sys; print(json.load(sys.stdin)['user']['id'])")
+
+          # Get project ID by name (from vercel.json: "graystone-web")
+          PROJECT_RESP=$(curl -sf "https://api.vercel.com/v9/projects/graystone-web" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" || echo "{}")
+          PROJECT_ID=$(echo "$PROJECT_RESP" | \
+            python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+
+          # If project doesn't exist yet, create it
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Project not found — creating graystone-web..."
+            PROJECT_ID=$(curl -sf -X POST "https://api.vercel.com/v10/projects" \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"name":"graystone-web","framework":"nextjs"}' | \
+              python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          fi
+
+          echo "ORG_ID    : $ORG_ID"
+          echo "PROJECT_ID: $PROJECT_ID"
+
+          mkdir -p .vercel
+          echo "{\"orgId\":\"$ORG_ID\",\"projectId\":\"$PROJECT_ID\"}" > .vercel/project.json
 
       - name: Build
         working-directory: apps/web
