@@ -52,6 +52,21 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel link --project graystone-web --yes --token=$VERCEL_TOKEN
 
+      # Ensure rootDirectory is always set to apps/web on the Vercel project
+      # so it serves the Next.js app correctly (fixes 404 on new projects)
+      - name: Set root directory to apps/web
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          PROJECT_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['projectId'])")
+          echo "Setting rootDirectory=apps/web on project $PROJECT_ID"
+          curl -sf -X PATCH "https://api.vercel.com/v9/projects/$PROJECT_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"rootDirectory":"apps/web"}' \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print('rootDirectory:', d.get('rootDirectory'))"
+
       - name: Pull project settings
         working-directory: apps/web
         env:
