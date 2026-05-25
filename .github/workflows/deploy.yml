@@ -25,21 +25,28 @@ jobs:
         with:
           node-version: '20'
 
+      # Cache both node_modules AND the npm download cache
+      # so neither npm ci nor npm install -g hits the network on repeat runs
       - name: Cache node_modules
-        id: cache
+        id: cache-modules
         uses: actions/cache@v4
         with:
           path: apps/web/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('apps/web/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-node-
+          key: modules-${{ hashFiles('apps/web/package-lock.json') }}
+
+      - name: Cache npm global (Vercel CLI)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-global-vercel-54.4.1
 
       - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cache-modules.outputs.cache-hit != 'true'
         working-directory: apps/web
-        run: npm ci
+        run: npm ci --no-audit --no-fund --prefer-offline
 
       - name: Install Vercel CLI
-        run: npm install -g vercel@latest
+        run: npm install -g vercel@54.4.1 --no-audit --no-fund --prefer-offline
 
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
