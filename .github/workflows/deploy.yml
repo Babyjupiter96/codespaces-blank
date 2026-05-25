@@ -37,14 +37,19 @@ jobs:
         working-directory: apps/web
         run: npm ci --no-audit --no-fund --prefer-offline
 
-      # Link, pull settings, and build all in one step so .vercel/project.json
-      # is guaranteed to exist in the same shell context when pull and build run.
-      - name: Link, Pull & Build
+      # vercel link runs from apps/web to scope the project to that directory.
+      # vercel pull/build/deploy run from repo root so rootDirectory=apps/web
+      # in the project settings resolves correctly without double-pathing.
+      - name: Link project
         working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel@54.4.1 link --project graystone-web --yes --token=$VERCEL_TOKEN
+
+      - name: Pull & Build
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          npx vercel@54.4.1 link --project graystone-web --yes --token=$VERCEL_TOKEN
           npx vercel@54.4.1 pull --yes --environment=production --token=$VERCEL_TOKEN
           npx vercel@54.4.1 build --prod --token=$VERCEL_TOKEN
 
@@ -52,7 +57,6 @@ jobs:
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
-        working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -76,7 +80,6 @@ jobs:
       # ── Production (push to main) ─────────────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
