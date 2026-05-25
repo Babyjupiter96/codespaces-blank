@@ -52,6 +52,12 @@ jobs:
         run: |
           npx vercel@54.4.1 pull --yes --environment=production --token=$VERCEL_TOKEN
           npx vercel@54.4.1 build --prod --token=$VERCEL_TOKEN
+          echo "=== .vercel/output at repo root ==="
+          ls -la .vercel/output/ 2>/dev/null || echo "NOT FOUND at repo root"
+          echo "=== .vercel/output inside apps/web ==="
+          ls -la apps/web/.vercel/output/ 2>/dev/null || echo "NOT FOUND inside apps/web"
+          echo "=== .vercel/output/config.json (repo root) ==="
+          cat .vercel/output/config.json 2>/dev/null || echo "NOT FOUND"
 
       # ── Preview (pull requests) ───────────────────────────────────────────
       - name: Deploy Preview
