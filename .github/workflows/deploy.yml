@@ -25,60 +25,32 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Cache node_modules
-        id: cache-modules
-        uses: actions/cache@v4
-        with:
-          path: apps/web/node_modules
-          key: modules-${{ hashFiles('apps/web/package-lock.json') }}
+      - name: Install Vercel CLI
+        run: npm install -g vercel@54.4.1
 
-      - name: Install dependencies
-        if: steps.cache-modules.outputs.cache-hit != 'true'
-        working-directory: apps/web
-        run: npm ci --no-audit --no-fund --prefer-offline
-
-      - name: Link & scope to apps/web
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # All Vercel commands run from repo root. rootDirectory=apps/web in the
+      # Vercel project settings tells the CLI where the app lives — running the
+      # CLI inside apps/web double-paths the root and produces empty route output.
+      - name: Pull project settings
         run: |
-          # vercel link writes .vercel/ either to the CWD or the git root.
-          npx vercel@54.4.1 link --project graystone-web --yes --token=$VERCEL_TOKEN
+          vercel pull --yes --environment=production \
+            --token="${{ secrets.VERCEL_TOKEN }}" \
+            --scope="jack-bamis-projects"
 
-          # Find project.json wherever vercel link wrote it.
-          PROJ_JSON=$(find /home/runner/work -name "project.json" -path "*/.vercel/*" 2>/dev/null | head -1)
-          echo "Found project.json at: $PROJ_JSON"
-          PROJECT_ID=$(python3 -c "import json; print(json.load(open('$PROJ_JSON'))['projectId'])")
-          ORG_ID=$(python3 -c "import json; print(json.load(open('$PROJ_JSON'))['orgId'])")
-
-          # Clear rootDirectory so vercel build uses CWD (apps/web) with no path override.
-          curl -sf -X PATCH "https://api.vercel.com/v9/projects/$PROJECT_ID?teamId=$ORG_ID" \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"rootDirectory": null}'
-
-          # Ensure project.json is in apps/web/.vercel/ so all subsequent commands
-          # treat apps/web as the project root (not the git root).
-          mkdir -p .vercel
-          cp "$PROJ_JSON" .vercel/project.json
-
-      - name: Pull & Build
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Build
         run: |
-          npx vercel@54.4.1 pull --yes --environment=production --token=$VERCEL_TOKEN
-          npx vercel@54.4.1 build --prod --token=$VERCEL_TOKEN
+          vercel build --prod \
+            --token="${{ secrets.VERCEL_TOKEN }}" \
+            --scope="jack-bamis-projects"
 
       # ── Preview (pull requests) ───────────────────────────────────────────
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          URL=$(npx vercel@54.4.1 deploy --prebuilt --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          URL=$(vercel deploy --prebuilt \
+            --token="${{ secrets.VERCEL_TOKEN }}" \
+            --scope="jack-bamis-projects" 2>&1 | tail -1)
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview: $URL"
 
@@ -98,11 +70,10 @@ jobs:
       # ── Production (push to main) ─────────────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          OUTPUT=$(npx vercel@54.4.1 deploy --prebuilt --prod --token=$VERCEL_TOKEN 2>&1)
+          OUTPUT=$(vercel deploy --prebuilt --prod \
+            --token="${{ secrets.VERCEL_TOKEN }}" \
+            --scope="jack-bamis-projects" 2>&1)
           echo "$OUTPUT"
           URL=$(echo "$OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
           echo ""
