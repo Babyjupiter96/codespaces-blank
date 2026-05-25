@@ -12,6 +12,8 @@ permissions:
 
 env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
   deploy:
@@ -44,14 +46,21 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
-      # Build + deploy from apps/web — Vercel reads apps/web/vercel.json
-      # which has framework:nextjs so it's served correctly as a Next.js app.
+      - name: Pull Vercel project settings
+        working-directory: apps/web
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build
+        working-directory: apps/web
+        run: vercel build --prod --token=$VERCEL_TOKEN
+
+      # ── Preview (pull requests) ───────────────────────────────────────────
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
         working-directory: apps/web
         run: |
-          URL=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
+          URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN 2>&1 | tail -1)
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview: $URL"
 
@@ -61,27 +70,22 @@ jobs:
         with:
           script: |
             const url = '${{ steps.preview.outputs.url }}';
-            const sha = context.sha.slice(0, 7);
-            const branch = context.payload.pull_request.head.ref;
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: [
-                '## 🚀 Vercel Preview Deployment',
-                `**URL:** ${url}`,
-                `**Branch:** \`${branch}\` · **Commit:** \`${sha}\``,
-              ].join('\n'),
+              body: `## 🚀 Preview Deployment\n\n**URL:** ${url}\n**Commit:** \`${context.sha.slice(0,7)}\``,
             });
 
+      # ── Production (push to main) ─────────────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: apps/web
         run: |
-          OUTPUT=$(vercel deploy --prod --token=$VERCEL_TOKEN --yes 2>&1)
+          OUTPUT=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN 2>&1)
           echo "$OUTPUT"
           URL=$(echo "$OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
           echo ""
-          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✅  LIVE: $URL"
-          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

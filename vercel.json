@@ -1,9 +1,4 @@
 {
-"git": {
-"deploymentEnabled": false
-},
-"buildCommand": "cd apps/web && npm ci && npm run build",
-"outputDirectory": "apps/web/.next",
-"framework": "nextjs",
-"installCommand": "npm ci --cache .npm --prefer-offline"
+  "name": "graystone-web",
+  "framework": "nextjs"
 }
