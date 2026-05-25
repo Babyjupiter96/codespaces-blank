@@ -32,52 +32,23 @@ jobs:
           path: apps/web/node_modules
           key: modules-${{ hashFiles('apps/web/package-lock.json') }}
 
-      - name: Cache npm (Vercel CLI)
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: npm-global-vercel-54.4.1
-
       - name: Install dependencies
         if: steps.cache-modules.outputs.cache-hit != 'true'
         working-directory: apps/web
         run: npm ci --no-audit --no-fund --prefer-offline
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@54.4.1 --no-audit --no-fund --prefer-offline
-
-      - name: Link project
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel link --project graystone-web --yes --token=$VERCEL_TOKEN
-
-      # Ensure rootDirectory is always set to apps/web on the Vercel project
-      # so it serves the Next.js app correctly (fixes 404 on new projects)
-      - name: Set root directory to apps/web
+      # Link, pull settings, and build all in one step so .vercel/project.json
+      # is guaranteed to exist in the same shell context when pull and build run.
+      - name: Link, Pull & Build
         working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          PROJECT_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['projectId'])")
-          echo "Setting rootDirectory=apps/web on project $PROJECT_ID"
-          curl -sf -X PATCH "https://api.vercel.com/v9/projects/$PROJECT_ID" \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"rootDirectory":"apps/web"}' \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print('rootDirectory:', d.get('rootDirectory'))"
-
-      - name: Pull project settings
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-
-      - name: Build
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel build --prod --token=$VERCEL_TOKEN
+          npx vercel@54.4.1 link --project graystone-web --yes --token=$VERCEL_TOKEN
+          echo "── .vercel/ contents ──"
+          ls -la .vercel/
+          npx vercel@54.4.1 pull --yes --environment=production --token=$VERCEL_TOKEN
+          npx vercel@54.4.1 build --prod --token=$VERCEL_TOKEN
 
       # ── Preview (pull requests) ───────────────────────────────────────────
       - name: Deploy Preview
@@ -87,7 +58,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN 2>&1 | tail -1)
+          URL=$(npx vercel@54.4.1 deploy --prebuilt --token=$VERCEL_TOKEN 2>&1 | tail -1)
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview: $URL"
 
@@ -111,7 +82,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          OUTPUT=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN 2>&1)
+          OUTPUT=$(npx vercel@54.4.1 deploy --prebuilt --prod --token=$VERCEL_TOKEN 2>&1)
           echo "$OUTPUT"
           URL=$(echo "$OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
           echo ""
