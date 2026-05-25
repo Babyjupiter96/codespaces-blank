@@ -17,7 +17,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # fail fast — should finish in under 3 min
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -28,17 +28,14 @@ jobs:
         with:
           node-version: '20'
 
-      # Cache node_modules by lockfile hash — skips install on repeat runs
       - name: Cache node_modules
         id: cache
         uses: actions/cache@v4
         with:
           path: apps/web/node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('apps/web/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          restore-keys: ${{ runner.os }}-node-
 
-      # npm ci: clean, deterministic, 3-5x faster than npm install
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         working-directory: apps/web
@@ -47,27 +44,16 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
-      # vercel build runs the build locally (fast, output to .vercel/output/)
-      # vercel deploy --prebuilt uploads only the artifacts — no remote build,
-      # no second npm install, no upload of node_modules
-      - name: Build
-        working-directory: apps/web
-        run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            vercel build --prod --token=$VERCEL_TOKEN --yes
-          else
-            vercel build --token=$VERCEL_TOKEN --yes
-          fi
-
-      # ── Preview deploy (pull requests) ───────────────────────────────────
+      # Build + deploy from apps/web — Vercel reads apps/web/vercel.json
+      # which has framework:nextjs so it's served correctly as a Next.js app.
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
         working-directory: apps/web
         run: |
-          DEPLOY_URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
-          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "Preview URL: $DEPLOY_URL"
+          URL=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Preview: $URL"
 
       - name: Comment Preview URL on PR
         if: github.event_name == 'pull_request' && steps.preview.outputs.url != ''
@@ -75,7 +61,7 @@ jobs:
         with:
           script: |
             const url = '${{ steps.preview.outputs.url }}';
-            const sha  = context.sha.slice(0, 7);
+            const sha = context.sha.slice(0, 7);
             const branch = context.payload.pull_request.head.ref;
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -83,30 +69,19 @@ jobs:
               repo: context.repo.repo,
               body: [
                 '## 🚀 Vercel Preview Deployment',
-                '',
                 `**URL:** ${url}`,
-                '',
-                '| | |',
-                '|---|---|',
-                `| ✅ Status | Ready |`,
-                `| 🌿 Branch | \`${branch}\` |`,
-                `| 📦 Commit | \`${sha}\` |`,
+                `**Branch:** \`${branch}\` · **Commit:** \`${sha}\``,
               ].join('\n'),
             });
 
-      # ── Production deploy (push to main) ─────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: apps/web
         run: |
-          DEPLOY_OUTPUT=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes 2>&1)
-          echo "$DEPLOY_OUTPUT"
-          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "⚠ Could not parse URL — check https://vercel.com/dashboard"
-          else
-            echo ""
-            echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "✅  LIVE URL: $DEPLOY_URL"
-            echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          fi
+          OUTPUT=$(vercel deploy --prod --token=$VERCEL_TOKEN --yes 2>&1)
+          echo "$OUTPUT"
+          URL=$(echo "$OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
+          echo ""
+          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅  LIVE: $URL"
+          echo "✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
