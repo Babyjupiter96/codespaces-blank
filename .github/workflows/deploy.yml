@@ -25,8 +25,6 @@ jobs:
         with:
           node-version: '20'
 
-      # Cache both node_modules AND the npm download cache
-      # so neither npm ci nor npm install -g hits the network on repeat runs
       - name: Cache node_modules
         id: cache-modules
         uses: actions/cache@v4
@@ -34,7 +32,7 @@ jobs:
           path: apps/web/node_modules
           key: modules-${{ hashFiles('apps/web/package-lock.json') }}
 
-      - name: Cache npm global (Vercel CLI)
+      - name: Cache npm (Vercel CLI)
         uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -48,6 +46,19 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@54.4.1 --no-audit --no-fund --prefer-offline
 
+      - name: Link Vercel project
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel link --yes --token=$VERCEL_TOKEN
+
+      - name: Build
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod --token=$VERCEL_TOKEN
+
+      # ── Preview (pull requests) ───────────────────────────────────────────
       - name: Deploy Preview
         if: github.event_name == 'pull_request'
         id: preview
@@ -55,7 +66,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          URL=$(vercel deploy --token=$VERCEL_TOKEN --yes 2>&1 | tail -1)
+          URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN 2>&1 | tail -1)
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview: $URL"
 
@@ -69,16 +80,17 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## 🚀 Preview Deployment\n\n**URL:** ${url}\n**Commit:** \`${context.sha.slice(0,7)}\``,
+              body: `## 🚀 Preview\n\n**URL:** ${url}\n**Commit:** \`${context.sha.slice(0,7)}\``,
             });
 
+      # ── Production (push to main) ─────────────────────────────────────────
       - name: Deploy Production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          OUTPUT=$(vercel deploy --prod --token=$VERCEL_TOKEN --yes 2>&1)
+          OUTPUT=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN 2>&1)
           echo "$OUTPUT"
           URL=$(echo "$OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
           echo ""
