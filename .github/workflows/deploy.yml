@@ -42,24 +42,25 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          # vercel link writes .vercel/ to the git root due to git-root detection.
+          # vercel link writes .vercel/ either to the CWD or the git root.
           npx vercel@54.4.1 link --project graystone-web --yes --token=$VERCEL_TOKEN
 
-          # Extract project/org IDs from repo-root .vercel/project.json
-          PROJECT_ID=$(python3 -c "import json; print(json.load(open('../../.vercel/project.json'))['projectId'])")
-          ORG_ID=$(python3 -c "import json; print(json.load(open('../../.vercel/project.json'))['orgId'])")
+          # Find project.json wherever vercel link wrote it.
+          PROJ_JSON=$(find /home/runner/work -name "project.json" -path "*/.vercel/*" 2>/dev/null | head -1)
+          echo "Found project.json at: $PROJ_JSON"
+          PROJECT_ID=$(python3 -c "import json; print(json.load(open('$PROJ_JSON'))['projectId'])")
+          ORG_ID=$(python3 -c "import json; print(json.load(open('$PROJ_JSON'))['orgId'])")
 
-          # Clear rootDirectory on the project so vercel build uses CWD (apps/web)
-          # instead of resolving apps/web relative to the repo root (double-path bug).
+          # Clear rootDirectory so vercel build uses CWD (apps/web) with no path override.
           curl -sf -X PATCH "https://api.vercel.com/v9/projects/$PROJECT_ID?teamId=$ORG_ID" \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"rootDirectory": null}'
 
-          # Copy project.json into apps/web/.vercel/ so pull/build/deploy use
-          # apps/web as the project root and write output here, not at repo root.
+          # Ensure project.json is in apps/web/.vercel/ so all subsequent commands
+          # treat apps/web as the project root (not the git root).
           mkdir -p .vercel
-          cp ../../.vercel/project.json .vercel/project.json
+          cp "$PROJ_JSON" .vercel/project.json
 
       - name: Pull & Build
         working-directory: apps/web
